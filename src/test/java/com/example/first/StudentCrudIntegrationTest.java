@@ -15,8 +15,8 @@ public class StudentCrudIntegrationTest {
     @BeforeAll
     static void setup() {
         // Use system property 'service.url' if provided, else fall back to environment variable 'QA_URL', else default to QA port 8082
-        String baseUri = System.getProperty("service.url", 
-            System.getenv("QA_URL") != null ? System.getenv("QA_URL") : "http://localhost:8082");
+        String baseUri = System.getProperty("service.url",
+                System.getenv("QA_URL") != null ? System.getenv("QA_URL") : "http://localhost:8082");
         RestAssured.baseURI = baseUri;
     }
 
@@ -24,20 +24,22 @@ public class StudentCrudIntegrationTest {
     @Order(1)
     void testCreateStudent() {
         String studentJson = "{\"name\":\"John Doe\",\"email\":\"john@example.com\"}";
-        ValidatableResponse response = retryRequest(() -> 
-            RestAssured.given()
-                .contentType(ContentType.JSON)
-                .body(studentJson)
-                .when()
-                .post("/students")
-                .then()
-                .statusCode(200)
-                .body("id", notNullValue())
-                .body("name", equalTo("John Doe"))
-                .body("email", equalTo("john@example.com")));
+        ValidatableResponse response = retryRequest(() ->
+                RestAssured.given()
+                        .contentType(ContentType.JSON)
+                        .body(studentJson)
+                        .when()
+                        .post("/students")
+                        .then()
+                        .statusCode(200)
+                        .body("id", notNullValue())
+                        .body("name", equalTo("John Doe"))
+                        .body("email", equalTo("john@example.com")));
 
         studentId = response.extract().path("id");
         Assertions.assertNotNull(studentId, "Student ID should not be null after creation");
+
+        System.out.println("✅ testCreateStudent passed: Student created with ID = " + studentId);
     }
 
     @Test
@@ -51,6 +53,8 @@ public class StudentCrudIntegrationTest {
                 .body("id", equalTo(studentId))
                 .body("name", equalTo("John Doe"))
                 .body("email", equalTo("john@example.com"));
+
+        System.out.println("✅ testGetStudentAfterCreate passed: Student data fetched correctly after creation");
     }
 
     @Test
@@ -67,6 +71,8 @@ public class StudentCrudIntegrationTest {
                 .body("id", equalTo(studentId))
                 .body("name", equalTo("Jane Doe"))
                 .body("email", equalTo("jane@example.com"));
+
+        System.out.println("✅ testUpdateStudent passed: Student updated to Jane Doe");
     }
 
     @Test
@@ -80,6 +86,8 @@ public class StudentCrudIntegrationTest {
                 .body("id", equalTo(studentId))
                 .body("name", equalTo("Jane Doe"))
                 .body("email", equalTo("jane@example.com"));
+
+        System.out.println("✅ testGetStudentAfterUpdate passed: Verified student data after update");
     }
 
     // @Test
@@ -90,6 +98,8 @@ public class StudentCrudIntegrationTest {
     //             .delete("/students/{id}", studentId)
     //             .then()
     //             .statusCode(204);
+    //
+    //     System.out.println("✅ testDeleteStudent passed: Student deleted successfully");
     // }
 
     // @Test
@@ -100,6 +110,8 @@ public class StudentCrudIntegrationTest {
     //             .get("/students/{id}", studentId)
     //             .then()
     //             .statusCode(404);
+    //
+    //     System.out.println("✅ testGetStudentAfterDelete passed: Confirmed student not found after deletion");
     // }
 
     // Retry mechanism for transient connection issues
