@@ -14,8 +14,9 @@ public class StudentCrudIntegrationTest {
 
     @BeforeAll
     static void setup() {
-        // You can override this with -Dapi.baseUri=http://your-qa-server:8080
-        String baseUri = "http://localhost:8081";
+        // Use system property 'service.url' if provided, else fall back to environment variable 'QA_URL', else default to QA port 8082
+        String baseUri = System.getProperty("service.url", 
+            System.getenv("QA_URL") != null ? System.getenv("QA_URL") : "http://localhost:8082");
         RestAssured.baseURI = baseUri;
     }
 
@@ -23,7 +24,8 @@ public class StudentCrudIntegrationTest {
     @Order(1)
     void testCreateStudent() {
         String studentJson = "{\"name\":\"John Doe\",\"email\":\"john@example.com\"}";
-        ValidatableResponse response = RestAssured.given()
+        ValidatableResponse response = retryRequest(() -> 
+            RestAssured.given()
                 .contentType(ContentType.JSON)
                 .body(studentJson)
                 .when()
@@ -32,7 +34,7 @@ public class StudentCrudIntegrationTest {
                 .statusCode(200)
                 .body("id", notNullValue())
                 .body("name", equalTo("John Doe"))
-                .body("email", equalTo("john@example.com"));
+                .body("email", equalTo("john@example.com")));
 
         studentId = response.extract().path("id");
         Assertions.assertNotNull(studentId, "Student ID should not be null after creation");
@@ -97,7 +99,28 @@ public class StudentCrudIntegrationTest {
                 .when()
                 .get("/students/{id}", studentId)
                 .then()
-                .statusCode(404); // Assuming your API returns 404 for not found
+                .statusCode(404);
+    }
+
+    // Retry mechanism for transient connection issues
+    private ValidatableResponse retryRequest(java.util.function.Supplier<ValidatableResponse> request) {
+        int maxRetries = 3;
+        int retryDelaySeconds = 5;
+        Exception lastException = null;
+
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                return request.get();
+            } catch (Exception e) {
+                lastException = e;
+                try {
+                    Thread.sleep(retryDelaySeconds * 1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Retry interrupted", ie);
+                }
+            }
+        }
+        throw new RuntimeException("Failed after " + maxRetries + " retries", lastException);
     }
 }
-
