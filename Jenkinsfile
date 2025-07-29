@@ -6,9 +6,6 @@ pipeline {
     }
     environment {
         APP_NAME = "first"
-        DOCKER_REGISTRY = "your-docker-registry" // e.g., "docker.io/yourusername"
-        DOCKER_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}"
-        DOCKER_TAG = "${env.BUILD_ID}"
         QA_PORT = "8082"
         PREPROD_PORT = "8083"
         LOG_DIR = "${WORKSPACE}/logs"
@@ -17,7 +14,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/Thoufiq26/spring.git', branch: 'main'
+                git url: 'https://github.com/PS-Thoufiq/spring-sample-using-docker.git', branch: 'main'
             }
         }
         stage('Create Log Directory') {
@@ -35,55 +32,61 @@ pipeline {
                 bat 'mvnw.cmd test'
             }
         }
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    // Create Dockerfile if it doesn't exist
-                    if (!fileExists('Dockerfile')) {
-                        writeFile file: 'Dockerfile', text: """
-                            FROM eclipse-temurin:21-jdk-jammy
-                            WORKDIR /app
-                            COPY target/${APP_NAME}-0.0.1-SNAPSHOT.jar app.jar
-                            ENTRYPOINT ["java", "-jar", "app.jar"]
-                        """
-                    }
-                    
-                    // Build Docker image
-                    bat "docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} ."
-                }
-            }
-        }
-        stage('Deploy to QA (Docker)') {
+        stage('Deploy to QA') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
             steps {
                 echo "Deploying to QA environment on port ${QA_PORT}"
                 script {
-                    // Stop and remove any existing container
-                    bat "docker stop ${APP_NAME}-qa || exit 0"
-                    bat "docker rm ${APP_NAME}-qa || exit 0"
+                    // Kill any existing process on QA port
+                    try {
+                        bat """
+                            for /f \"tokens=5\" %%i in ('netstat -aon ^| findstr :${QA_PORT}') do taskkill /F /PID %%i
+                        """
+                    } catch (Exception e) {
+                        echo "No process found on port ${QA_PORT}"
+                    }
                     
-                    // Run QA container
+                    // Start QA instance with redirected output
                     bat """
-                        docker run -d \
-                          --name ${APP_NAME}-qa \
-                          -p ${QA_PORT}:${QA_PORT} \
-                          -e SPRING_PROFILES_ACTIVE=qa \
-                          -e SERVER_PORT=${QA_PORT} \
-                          ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=qa --server.port=${QA_PORT}
+                        echo Starting QA instance: %JAVA_CMD%
+                        start \"QA_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\qa.log 2>&1\"
                     """
                     
                     // Wait for application to start
                     sleep(time: 60, unit: "SECONDS")
                     
-                    // Verify custom health check
-                    bat """
-                        curl -f http://localhost:${QA_PORT}/students/health | findstr \"\\\"status\\\":\\\"UP\\\"\" | findstr \"\\\"stage\\\":\\\"qa\\\"\" || exit 1
-                    """
+                    // Verify custom health check with retries
+                    script {
+                        def maxRetries = 3
+                        def retryDelay = 10
+                        def success = false
+                        for (int i = 0; i < maxRetries; i++) {
+                            try {
+                                bat """
+                                    curl -f http://localhost:${QA_PORT}/students/health | findstr \"\\\"status\\\":\\\"UP\\\"\" | findstr \"\\\"stage\\\":\\\"qa\\\"\" || exit 1
+                                """
+                                success = true
+                                break
+                            } catch (Exception e) {
+                                echo "Health check failed, retrying in ${retryDelay} seconds..."
+                                sleep(time: retryDelay, unit: "SECONDS")
+                            }
+                        }
+                        if (!success) {
+                            error "QA health check failed after ${maxRetries} retries"
+                        }
+                    }
                     
                     // Log QA status
                     echo "QA is running on http://localhost:${QA_PORT}/students/health"
+                    
+                    // Verify process is running
+                    bat """
+                        netstat -aon | findstr :${QA_PORT} || exit 1
+                    """
                 }
             }
         }
@@ -100,8 +103,8 @@ pipeline {
                     
                     // Verify integration tests passed
                     bat """
-                        if exist target\\surefire-reports (
-                            findstr /m /c:"FAILURE" target\\surefire-reports\\*.txt && exit 1 || exit 0
+                        if exist target\\failsafe-reports (
+                            findstr /m /c:"FAILURE" target\\failsafe-reports\\*.txt && exit 1 || exit 0
                         )
                     """
                 }
@@ -115,74 +118,76 @@ pipeline {
                 input message: 'Integration tests passed. Approve deployment to Pre-Prod?', ok: 'Deploy'
             }
         }
-        stage('Deploy to Pre-Prod (Docker)') {
+        stage('Deploy to Pre-Prod') {
             steps {
                 echo "Deploying to Pre-Prod on port ${PREPROD_PORT}"
                 script {
-                    // Stop and remove any existing container
-                    bat "docker stop ${APP_NAME}-preprod || exit 0"
-                    bat "docker rm ${APP_NAME}-preprod || exit 0"
+                    // Kill any existing process on Pre-Prod port
+                    try {
+                        bat """
+                            for /f \"tokens=5\" %%i in ('netstat -aon ^| findstr :${PREPROD_PORT}') do taskkill /F /PID %%i
+                        """
+                    } catch (Exception e) {
+                        echo "No process found on port ${PREPROD_PORT}"
+                    }
                     
-                    // Run Pre-Prod container
+                    // Start Pre-Prod instance with redirected output
                     bat """
-                        docker run -d \
-                          --name ${APP_NAME}-preprod \
-                          -p ${PREPROD_PORT}:${PREPROD_PORT} \
-                          -e SPRING_PROFILES_ACTIVE=preprod \
-                          -e SERVER_PORT=${PREPROD_PORT} \
-                          ${DOCKER_IMAGE}:${DOCKER_TAG}
+                        set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=preprod --server.port=${PREPROD_PORT}
+                        echo Starting Pre-Prod instance: %JAVA_CMD%
+                        start \"PreProd_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\preprod.log 2>&1\"
                     """
                     
                     // Wait for application to start
                     sleep(time: 60, unit: "SECONDS")
                     
-                    // Verify custom health check
-                    bat """
-                        curl -f http://localhost:${PREPROD_PORT}/students/health | findstr \"\\\"status\\\":\\\"UP\\\"\" | findstr \"\\\"stage\\\":\\\"preprod\\\"\" || exit 1
-                    """
+                    // Verify custom health check with retries
+                    script {
+                        def maxRetries = 3
+                        def retryDelay = 10
+                        def success = false
+                        for (int i = 0; i < maxRetries; i++) {
+                            try {
+                                bat """
+                                    curl -f http://localhost:${PREPROD_PORT}/students/health | findstr \"\\\"status\\\":\\\"UP\\\"\" | findstr \"\\\"stage\\\":\\\"preprod\\\"\" || exit 1
+                                """
+                                success = true
+                                break
+                            } catch (Exception e) {
+                                echo "Health check failed, retrying in ${retryDelay} seconds..."
+                                sleep(time: retryDelay, unit: "SECONDS")
+                            }
+                        }
+                        if (!success) {
+                            error "Pre-Prod health check failed after ${maxRetries} retries"
+                        }
+                    }
                     
                     // Log Pre-Prod status
                     echo "Pre-Prod is running on http://localhost:${PREPROD_PORT}/students/health"
-                }
-            }
-        }
-        stage('Push to Docker Registry') {
-            when {
-                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
-            }
-            steps {
-                script {
-                    // Login to Docker registry (credentials should be configured in Jenkins)
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
-                    }
                     
-                    // Push the Docker image
-                    bat "docker push ${DOCKER_IMAGE}:${DOCKER_TAG}"
-                    
-                    // Optionally tag as latest and push
-                    bat "docker tag ${DOCKER_IMAGE}:${DOCKER_TAG} ${DOCKER_IMAGE}:latest"
-                    bat "docker push ${DOCKER_IMAGE}:latest"
+                    // Verify process is running
+                    bat """
+                        netstat -aon | findstr :${PREPROD_PORT} || exit 1
+                    """
                 }
             }
         }
     }
     post {
         success {
-            echo 'Pipeline completed successfully! Both containers are running:'
-            echo "QA: http://localhost:${QA_PORT}/students/health"
-            echo "Pre-Prod: http://localhost:${PREPROD_PORT}/students/health"
-            echo "Docker image pushed to: ${DOCKER_IMAGE}:${DOCKER_TAG}"
-            echo "To stop these containers, run:"
-            echo " docker stop ${APP_NAME}-qa ${APP_NAME}-preprod"
+            echo 'Pipeline completed successfully! Both instances are running:'
+            echo "QA: http://localhost:${QA_PORT}/students/health (logs: ${LOG_DIR}\\qa.log)"
+            echo "Pre-Prod: http://localhost:${PREPROD_PORT}/students/health (logs: ${LOG_DIR}\\preprod.log)"
+            echo "To stop these instances, run:"
+            echo " taskkill /FI \"WINDOWTITLE eq QA_Instance_${BUILD_ID}\" /T /F"
+            echo " taskkill /FI \"WINDOWTITLE eq PreProd_Instance_${BUILD_ID}\" /T /F"
         }
         failure {
-            echo 'Pipeline failed. Check logs for details.'
-            // Clean up any running containers
-            bat "docker stop ${APP_NAME}-qa || exit 0"
-            bat "docker rm ${APP_NAME}-qa || exit 0"
-            bat "docker stop ${APP_NAME}-preprod || exit 0"
-            bat "docker rm ${APP_NAME}-preprod || exit 0"
+            echo 'Pipeline failed. Check logs for details: ${LOG_DIR}\\qa.log and ${LOG_DIR}\\preprod.log'
+            // Clean up any running instances
+            bat "taskkill /FI \"WINDOWTITLE eq QA_Instance_*\" /T /F || exit 0"
+            bat "taskkill /FI \"WINDOWTITLE eq PreProd_Instance_*\" /T /F || exit 0"
         }
     }
 }
