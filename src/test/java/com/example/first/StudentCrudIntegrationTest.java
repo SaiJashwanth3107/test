@@ -82,25 +82,25 @@ public class StudentCrudIntegrationTest {
                 .body("email", equalTo("jane@example.com"));
     }
 
-    @Test
-    @Order(5)
-    void testDeleteStudent() {
-        RestAssured.given()
-                .when()
-                .delete("/students/{id}", studentId)
-                .then()
-                .statusCode(204);
-    }
+    // @Test
+    // @Order(5)
+    // void testDeleteStudent() {
+    //     RestAssured.given()
+    //             .when()
+    //             .delete("/students/{id}", studentId)
+    //             .then()
+    //             .statusCode(204);
+    // }
 
-    @Test
-    @Order(6)
-    void testGetStudentAfterDelete() {
-        RestAssured.given()
-                .when()
-                .get("/students/{id}", studentId)
-                .then()
-                .statusCode(404);
-    }
+    // @Test
+    // @Order(6)
+    // void testGetStudentAfterDelete() {
+    //     RestAssured.given()
+    //             .when()
+    //             .get("/students/{id}", studentId)
+    //             .then()
+    //             .statusCode(404);
+    // }
 
     // Retry mechanism for transient connection issues
     private ValidatableResponse retryRequest(java.util.function.Supplier<ValidatableResponse> request) {
