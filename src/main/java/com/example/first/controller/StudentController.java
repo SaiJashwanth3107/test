@@ -55,7 +55,13 @@ public class StudentController {
 
     // Delete
     @DeleteMapping("/{id}")
-    public void deleteStudent(@PathVariable String id) {
-        studentRepo.deleteById(id);
+    public String deleteStudent(@PathVariable String id) {
+        if (studentRepo.existsById(id)) {
+            studentRepo.deleteById(id);
+            return "Student deleted successfully";
+        } else {
+            return "Student not found";
+        }
     }
+
 }
