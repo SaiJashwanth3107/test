@@ -9,6 +9,7 @@ pipeline {
         QA_PORT = "8082"
         PREPROD_PORT = "8083"
         LOG_DIR = "${WORKSPACE}/logs"
+        QA_URL = "http://localhost:${QA_PORT}"
     }
     stages {
         stage('Checkout') {
@@ -72,12 +73,32 @@ pipeline {
                 }
             }
         }
+        stage('Integration Tests') {
+            when {
+                expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
+            }
+            steps {
+                script {
+                    // Run integration tests against the QA environment
+                    bat """
+                        mvnw.cmd verify -Dspring.profiles.active=qa -Dservice.url=${QA_URL}
+                    """
+                    
+                    // Verify integration tests passed
+                    bat """
+                        if exist target\\surefire-reports (
+                            findstr /m /c:"FAILURE" target\\surefire-reports\\*.txt && exit 1 || exit 0
+                        )
+                    """
+                }
+            }
+        }
         stage('Approval for Pre-Prod') {
             when {
                 expression { currentBuild.result == null || currentBuild.result == 'SUCCESS' }
             }
             steps {
-                input message: 'Approve deployment to Pre-Prod?', ok: 'Deploy'
+                input message: 'Integration tests passed. Approve deployment to Pre-Prod?', ok: 'Deploy'
             }
         }
         stage('Deploy to Pre-Prod') {
