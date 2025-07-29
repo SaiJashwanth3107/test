@@ -4,9 +4,9 @@ import com.example.first.model.Student;
 import com.example.first.repository.StudentRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Map;
 
@@ -22,46 +22,52 @@ public class StudentController {
 
     // Custom health endpoint
     @GetMapping("/health")
-    public Map<String, String> health() {
-        return Map.of("status", "UP", "stage", stage);
+    public ResponseEntity<Object> health() {
+        System.out.println("Health check endpoint called. Stage: `${stage}`");
+        return ResponseEntity.ok(Map.of("status", "UP", "stage", stage));
     }
 
     // Create
     @PostMapping
-    public Student createStudent(@RequestBody Student student) {
-        return studentRepo.save(student);
+    public ResponseEntity<Object> createStudent(@RequestBody Student student) {
+        System.out.println("Creating student: " + student);
+        return ResponseEntity.ok(studentRepo.save(student));
     }
 
     // Read All
     @GetMapping
-    public List<Student> getAllStudents() {
-        return studentRepo.findAll();
+    public ResponseEntity<Object> getAllStudents() {
+        System.out.println("Fetching all students from the database");
+        return ResponseEntity.ok(studentRepo.findAll());
     }
 
     // Read by ID
     @GetMapping("/{id}")
-    public Optional<Student> getStudentById(@PathVariable String id) {
-        return studentRepo.findById(id);
+    public ResponseEntity<Object> getStudentById(@PathVariable String id) {
+        System.out.println("Fetching student with ID: " + id);
+        Optional<Student> student = studentRepo.findById(id);
+        if (student.isPresent()) {
+            return ResponseEntity.ok(student.get());
+        } else {
+            return ResponseEntity.status(404).body("Student not found");
+        }
     }
 
     // Update
     @PutMapping("/{id}")
-    public Student updateStudent(@PathVariable String id, @RequestBody Student studentDetails) {
+    public ResponseEntity<Object> updateStudent(@PathVariable String id, @RequestBody Student studentDetails) {
+        System.out.println("Updating student with ID: " + id + " with details: " + studentDetails);
         Student student = studentRepo.findById(id).orElseThrow();
         student.setName(studentDetails.getName());
         student.setEmail(studentDetails.getEmail());
-        return studentRepo.save(student);
+        return ResponseEntity.ok(studentRepo.save(student));
     }
 
     // Delete
     @DeleteMapping("/{id}")
-    public String deleteStudent(@PathVariable String id) {
-        if (studentRepo.existsById(id)) {
-            studentRepo.deleteById(id);
-            return "Student deleted successfully";
-        } else {
-            return "Student not found";
-        }
+    public ResponseEntity<Object> deleteStudent(@PathVariable String id) {
+        System.out.println("Deleting student with ID: " + id);
+        studentRepo.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
-
 }
