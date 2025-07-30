@@ -1,8 +1,8 @@
 pipeline {
     agent any
     tools {
-        maven 'Maven'
-        jdk 'JDK' // Configured for Java 21
+        maven 'Maven'   // Ensure this Maven tool is configured in Jenkins under Global Tool Configuration
+        jdk 'JDK'       // Ensure this JDK is configured for Java 21 in Jenkins under Global Tool Configuration
     }
     environment {
         APP_NAME = "first"
@@ -19,17 +19,35 @@ pipeline {
         }
         stage('Create Log Directory') {
             steps {
-                bat 'mkdir "%LOG_DIR%" || exit 0'
+                script {
+                    if (isUnix()) {
+                        sh 'mkdir -p $LOG_DIR'  // Unix/Linux command
+                    } else {
+                        bat 'mkdir "%LOG_DIR%" || exit 0'  // Windows command
+                    }
+                }
             }
         }
         stage('Build') {
             steps {
-                bat 'mvnw.cmd clean package'
+                script {
+                    if (isUnix()) {
+                        sh './mvnw clean package'  // Unix/Linux-based
+                    } else {
+                        bat 'mvnw.cmd clean package'  // Windows-based
+                    }
+                }
             }
         }
         stage('Unit Tests') {
             steps {
-                bat 'mvnw.cmd test'
+                script {
+                    if (isUnix()) {
+                        sh './mvnw test'  // Unix/Linux-based
+                    } else {
+                        bat 'mvnw.cmd test'  // Windows-based
+                    }
+                }
             }
         }
         stage('Deploy to QA') {
@@ -47,13 +65,17 @@ pipeline {
                     } catch (Exception e) {
                         echo "No process found on port ${QA_PORT}"
                     }
-                    
+
                     // Start QA instance with redirected output
-                    bat """
-                        set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=qa --server.port=${QA_PORT}
-                        echo Starting QA instance: %JAVA_CMD%
-                        start \"QA_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\qa.log 2>&1\"
-                    """
+                    if (isUnix()) {
+                        sh "nohup java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=qa --server.port=${QA_PORT} > ${LOG_DIR}/qa.log 2>&1 &"
+                    } else {
+                        bat """
+                            set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=qa --server.port=${QA_PORT}
+                            echo Starting QA instance: %JAVA_CMD%
+                            start \"QA_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\qa.log 2>&1\"
+                        """
+                    }
                     
                     // Wait for application to start
                     sleep(time: 60, unit: "SECONDS")
@@ -79,7 +101,7 @@ pipeline {
                             error "QA health check failed after ${maxRetries} retries"
                         }
                     }
-                    
+
                     // Log QA status
                     echo "QA is running on http://localhost:${QA_PORT}/students/health"
                     
@@ -97,10 +119,12 @@ pipeline {
             steps {
                 script {
                     // Run integration tests against the QA environment
-                    bat """
-                        mvnw.cmd verify -Dspring.profiles.active=qa -Dservice.url=${QA_URL}
-                    """
-                    
+                    if (isUnix()) {
+                        sh "./mvnw verify -Dspring.profiles.active=qa -Dservice.url=${QA_URL}"  // Unix/Linux-based
+                    } else {
+                        bat "mvnw.cmd verify -Dspring.profiles.active=qa -Dservice.url=${QA_URL}"  // Windows-based
+                    }
+
                     // Verify integration tests passed
                     bat """
                         if exist target\\failsafe-reports (
@@ -130,13 +154,17 @@ pipeline {
                     } catch (Exception e) {
                         echo "No process found on port ${PREPROD_PORT}"
                     }
-                    
+
                     // Start Pre-Prod instance with redirected output
-                    bat """
-                        set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=preprod --server.port=${PREPROD_PORT}
-                        echo Starting Pre-Prod instance: %JAVA_CMD%
-                        start \"PreProd_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\preprod.log 2>&1\"
-                    """
+                    if (isUnix()) {
+                        sh "nohup java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=preprod --server.port=${PREPROD_PORT} > ${LOG_DIR}/preprod.log 2>&1 &"
+                    } else {
+                        bat """
+                            set JAVA_CMD=java -jar target/${APP_NAME}-0.0.1-SNAPSHOT.jar --spring.profiles.active=preprod --server.port=${PREPROD_PORT}
+                            echo Starting Pre-Prod instance: %JAVA_CMD%
+                            start \"PreProd_Instance_${BUILD_ID}\" /B cmd /c \"%JAVA_CMD% > ${LOG_DIR}\\preprod.log 2>&1\"
+                        """
+                    }
                     
                     // Wait for application to start
                     sleep(time: 60, unit: "SECONDS")
@@ -162,7 +190,7 @@ pipeline {
                             error "Pre-Prod health check failed after ${maxRetries} retries"
                         }
                     }
-                    
+
                     // Log Pre-Prod status
                     echo "Pre-Prod is running on http://localhost:${PREPROD_PORT}/students/health"
                     
