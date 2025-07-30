@@ -32,7 +32,9 @@ pipeline {
             steps {
                 script {
                     if (isUnix()) {
+                        sh 'chmod +x ./mvnw'
                         sh './mvnw clean package'  // Unix/Linux-based
+                        
                     } else {
                         bat 'mvnw.cmd clean package'  // Windows-based
                     }
