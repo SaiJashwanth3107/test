@@ -14,7 +14,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git url: 'https://github.com/PS-Thoufiq/spring-sample-using-docker.git', branch: 'main'
+                git url: 'https://github.com/SaiJashwanth3107/test.git', branch: 'main'
             }
         }
         stage('Create Log Directory') {
